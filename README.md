@@ -584,20 +584,6 @@ Use Grafana and `kubectl` to detect and diagnose each fault. See [Lab 06](lab-gu
 
 ---
 
-## Workshop Modules
-
-| # | Topic | Speaker |
-|---|-------|---------|
-| 0 | Welcome & Orientation | Sandeep |
-| 1 | AI Workloads & Agents: Mental Models | **Shadab** |
-| 2 | Deploying AI Services & Agents | Sandeep |
-| 3 | Infrastructure Patterns for AI | Sandeep |
-| 4 | Networking, Security & Control Planes | **Shadab** |
-| 5 | Observability, Debugging & Reliability | Sandeep |
-| 6 | Capstone Scenario & Best Practices | **Shadab** |
-
----
-
 ## Lab Guides
 
 | Module | Lab |
