@@ -1,0 +1,48 @@
+# k8s/base/config.yaml
+#
+# BEST PRACTICE: Never commit real API keys. This file uses a placeholder.
+# In real environments use External Secrets Operator or Sealed Secrets.
+# For the workshop, create the secret manually:
+#
+#   kubectl create secret generic qagent-secrets \
+#     --from-literal=VERTEX_API_KEY=your-vertex-api-key \
+#     -n qagent
+#
+#   kubectl create secret generic gcp-sa-key \
+#     --from-file=sa-key.json=datacouch-vertexai-454d3a1b2eb6.json \
+#     -n qagent
+#
+---
+# ConfigMap holds non-sensitive configuration shared across all agents.
+# NOTE: qagent-secrets is created manually (never via kubectl apply):
+#   kubectl create secret generic qagent-secrets \
+#     --from-literal=VERTEX_API_KEY=<your-key> -n qagent
+# NOTE: gcp-sa-key is created manually:
+#   kubectl create secret generic gcp-sa-key \
+#     --from-file=sa-key.json=datacouch-vertexai-454d3a1b2eb6.json -n qagent
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qagent-config
+  namespace: qagent
+  labels:
+    app.kubernetes.io/part-of: qagent-k8s
+data:
+  GEMINI_MODEL: "gemini-2.5-flash-lite"
+  LOG_LEVEL: "INFO"
+
+  # Fallback 1: Ollama Cloud / DeepSeek (key injected via qagent-secrets)
+  DEEPSEEK_MODEL: "deepseek-v3.1:671b"
+  DEEPSEEK_BASE_URL: "https://ollama.com"
+
+  # Fallback 2: Vertex AI service account (paid, no quota limits)
+  GCP_SA_KEY_PATH: "/app/secrets/sa-key.json"
+  GOOGLE_CLOUD_PROJECT: "datacouch-vertexai"
+  GOOGLE_CLOUD_LOCATION: "us-central1"
+
+  # A2A service URLs — matches the Service names defined in each agent's service.yaml
+  ORCHESTRATOR_SVC_URL:  "http://orchestrator-svc:8000"
+  PLAN_AGENT_SVC_URL:    "http://plan-agent-svc:8001"
+  ADVISOR_AGENT_SVC_URL: "http://advisor-agent-svc:8002"
+  CODER_AGENT_SVC_URL:   "http://coder-agent-svc:8003"
+  REVIEWER_AGENT_SVC_URL: "http://reviewer-agent-svc:8004"

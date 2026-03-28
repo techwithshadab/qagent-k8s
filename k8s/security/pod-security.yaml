@@ -1,0 +1,58 @@
+# k8s/security/pod-security.yaml
+#
+# Pod Security Standards for QAgent agents.
+# Uses the newer Pod Security Admission (PSA) controller approach
+# (PodSecurityPolicy was deprecated in K8s 1.21, removed in 1.25).
+#
+# Label the namespace with the desired security level:
+#   kubectl label namespace qagent \
+#     pod-security.kubernetes.io/enforce=restricted \
+#     pod-security.kubernetes.io/warn=restricted
+---
+# ResourceQuota — prevent any single agent from exhausting the node
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: qagent-quota
+  namespace: qagent
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: "2Gi"
+    limits.cpu: "4"
+    limits.memory: "4Gi"
+    pods: "20"
+
+---
+# LimitRange — set defaults for pods that don't specify resources
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: qagent-limits
+  namespace: qagent
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "200m"
+        memory: "256Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "1"
+        memory: "1Gi"
+
+---
+# PodDisruptionBudget — maintain availability during node drains / rolling updates
+# BEST PRACTICE: For stateless agents, allow only 1 disruption at a time
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coder-agent-pdb
+  namespace: qagent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: coder-agent

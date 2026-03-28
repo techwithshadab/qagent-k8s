@@ -1,0 +1,45 @@
+# k8s/base/rbac.yaml
+# BEST PRACTICE: Each agent uses a dedicated ServiceAccount with least-privilege RBAC.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qagent-sa
+  namespace: qagent
+  labels:
+    app.kubernetes.io/part-of: qagent-k8s
+automountServiceAccountToken: false   # Don't auto-mount unless needed
+
+---
+# Role: read-only access to ConfigMaps and Secrets in qagent namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: qagent-role
+  namespace: qagent
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  # Agents read their own pod info for telemetry
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: qagent-rolebinding
+  namespace: qagent
+subjects:
+  - kind: ServiceAccount
+    name: qagent-sa
+    namespace: qagent
+roleRef:
+  kind: Role
+  name: qagent-role
+  apiGroup: rbac.authorization.k8s.io

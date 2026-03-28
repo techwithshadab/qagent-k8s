@@ -1,0 +1,123 @@
+# k8s/capstone/broken-scenario.yaml
+#
+# ⚠️  WORKSHOP CAPSTONE SCENARIO  ⚠️
+#
+# This manifest deliberately introduces three production-realistic failure modes
+# for participants to diagnose and fix during the capstone exercise:
+#
+#   FAULT 1 — Memory limit too low → OOMKilled coder pods under load
+#   FAULT 2 — Missing readiness probe → traffic sent to unready orchestrator
+#   FAULT 3 — Wrong service name in ConfigMap → A2A calls to plan-agent fail
+#
+# Instructions: Apply this AFTER the working base manifests.
+# Participants must find and fix all three faults without looking at the diff.
+#
+#   kubectl apply -f k8s/capstone/broken-scenario.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coder-agent          # FAULT 1: memory limit set to 64Mi (way too low for LLM)
+  namespace: qagent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: coder-agent
+  template:
+    metadata:
+      labels:
+        app: coder-agent
+        role: coder
+    spec:
+      serviceAccountName: qagent-sa
+      containers:
+        - name: coder-agent
+          image: qagent/coder-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - configMapRef:
+                name: qagent-config-broken   # references broken ConfigMap below
+            - secretRef:
+                name: qagent-secrets
+          env:
+            - name: PORT
+              value: "8003"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"    # ← FAULT 1: too low, will OOMKill
+            limits:
+              cpu: "500m"
+              memory: "64Mi"   # ← FAULT 1
+          # No readiness probe — traffic will be sent immediately on pod start
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8003 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator         # FAULT 2: readiness probe removed
+  namespace: qagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+        role: coordinator
+    spec:
+      serviceAccountName: qagent-sa
+      containers:
+        - name: orchestrator
+          image: qagent/orchestrator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: qagent-config-broken
+            - secretRef:
+                name: qagent-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          # ← FAULT 2: readinessProbe intentionally missing
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+
+---
+# FAULT 3: Wrong plan-agent service URL — typo in service name
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qagent-config-broken
+  namespace: qagent
+data:
+  GEMINI_MODEL: "gemini-1.5-flash"
+  LOG_LEVEL: "INFO"
+  ORCHESTRATOR_SVC_URL:  "http://orchestrator-svc:8000"
+  PLAN_AGENT_SVC_URL:    "http://plan-agnt-svc:8001"    # ← FAULT 3: typo "agnt" vs "agent"
+  ADVISOR_AGENT_SVC_URL: "http://advisor-agent-svc:8002"
+  CODER_AGENT_SVC_URL:   "http://coder-agent-svc:8003"
+  REVIEWER_AGENT_SVC_URL:"http://reviewer-agent-svc:8004"

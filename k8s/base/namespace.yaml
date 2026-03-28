@@ -1,0 +1,11 @@
+# k8s/base/namespace.yaml
+# All QAgent-K8s resources live in the qagent namespace.
+# Namespace isolation is a Kubernetes security best practice.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: qagent
+  labels:
+    app.kubernetes.io/part-of: qagent-k8s
+    environment: workshop

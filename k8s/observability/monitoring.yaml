@@ -1,0 +1,65 @@
+# k8s/observability/monitoring.yaml
+#
+# Prometheus ServiceMonitor + alert rules for QAgent agents.
+# Requires kube-prometheus-stack (or similar) to be installed.
+# For the workshop, use: helm install kube-prom prometheus-community/kube-prometheus-stack
+---
+# ServiceMonitor — tells Prometheus which pods to scrape
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: qagent-monitor
+  namespace: qagent
+  labels:
+    release: kube-prom   # Must match your prometheus-operator release label
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: qagent-k8s
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+
+---
+# PrometheusRule — alert on agent pod restarts and high latency
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: qagent-alerts
+  namespace: qagent
+spec:
+  groups:
+    - name: qagent.rules
+      rules:
+        # Alert: an agent pod restarted > 2 times in 15 minutes
+        - alert: AgentPodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="qagent"}[15m]) > 0.1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Agent pod is crash-looping"
+            description: "Pod {{ $labels.pod }} in namespace qagent is restarting frequently."
+
+        # Alert: orchestrator has no ready pods
+        - alert: OrchestratorDown
+          expr: |
+            kube_deployment_status_replicas_ready{namespace="qagent", deployment="orchestrator"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Orchestrator has no ready pods"
+
+        # Alert: HPA at max replicas (capacity pressure)
+        - alert: CoderAgentAtMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="qagent", horizontalpodautoscaler="coder-agent-hpa"}
+            == kube_horizontalpodautoscaler_spec_max_replicas{namespace="qagent", horizontalpodautoscaler="coder-agent-hpa"}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Coder Agent HPA at max replicas — consider raising the limit"

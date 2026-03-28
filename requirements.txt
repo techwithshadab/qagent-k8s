@@ -1,0 +1,26 @@
+# QAgent-K8s — Python dependencies
+# All agents use the same requirements for image consistency
+
+# Web framework
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# LangChain + Gemini primary, Ollama DeepSeek fallback, Vertex AI SA final fallback
+langchain==0.3.0
+langchain-google-genai==2.0.0
+langchain-google-vertexai==2.0.0
+# Ollama Cloud is called via httpx (already below) — no extra package needed
+langchain-core==0.3.0
+google-auth>=2.0.0
+
+# HTTP client (for A2A calls)
+httpx==0.27.0
+
+# Data validation
+pydantic==2.7.4
+
+# Observability
+opentelemetry-api==1.24.0
+opentelemetry-sdk==1.24.0
+opentelemetry-instrumentation-fastapi==0.45b0
+prometheus-client==0.20.0

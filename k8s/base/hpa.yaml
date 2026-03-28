@@ -1,0 +1,42 @@
+# k8s/base/hpa.yaml
+# Horizontal Pod Autoscaler for the Coder Agent.
+# AI inference tasks are CPU-bursty — HPA keeps throughput up during spikes.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: coder-agent-hpa
+  namespace: qagent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: coder-agent
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30    # React quickly to spikes
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 120   # Cool down slowly — LLM calls are expensive
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

@@ -1,0 +1,76 @@
+# k8s/base/ui.yaml
+# Deployment + NodePort Service for the chat UI agent.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui-agent
+  namespace: qagent
+  labels:
+    app: ui-agent
+    role: ui
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui-agent
+  template:
+    metadata:
+      labels:
+        app: ui-agent
+        role: ui
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8005"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: qagent-sa
+      containers:
+        - name: ui-agent
+          image: qagent/ui-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8005
+          envFrom:
+            - configMapRef:
+                name: qagent-config
+          env:
+            - name: PORT
+              value: "8005"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8005 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8005 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui-svc
+  namespace: qagent
+  labels:
+    app: ui-agent
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  selector:
+    app: ui-agent
+  type: NodePort
+  ports:
+    - name: http
+      port: 8005
+      targetPort: 8005
+      nodePort: 30080

@@ -1,0 +1,444 @@
+# k8s/base/agents.yaml
+# Deployment + Service for every agent pod.
+# Each agent runs in its own pod — one process per container (12-factor app).
+#
+# Resource requests/limits are intentionally modest for local (kind/minikube) use.
+# Scale up for production.
+---
+# ─────────────────────────────────────────────
+# Orchestrator
+# ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: qagent
+  labels:
+    app: orchestrator
+    role: coordinator
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+        role: coordinator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # BEST PRACTICE: Use a dedicated ServiceAccount per agent
+      serviceAccountName: qagent-sa
+      volumes:
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key
+      containers:
+        - name: orchestrator
+          image: qagent/orchestrator:latest
+          imagePullPolicy: IfNotPresent   # local cluster — image built with kind load
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: qagent-config
+            - secretRef:
+                name: qagent-secrets
+          volumeMounts:
+            - name: gcp-sa-key
+              mountPath: /app/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # BEST PRACTICE: Read-only root filesystem where possible
+          securityContext:
+            readOnlyRootFilesystem: false   # needs tmp for uvicorn
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator-svc
+  namespace: qagent
+  labels:
+    app: orchestrator
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# ─────────────────────────────────────────────
+# Plan Agent
+# ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plan-agent
+  namespace: qagent
+  labels:
+    app: plan-agent
+    role: planner
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: plan-agent
+  template:
+    metadata:
+      labels:
+        app: plan-agent
+        role: planner
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: qagent-sa
+      volumes:
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key
+      containers:
+        - name: plan-agent
+          image: qagent/plan-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: qagent-config
+            - secretRef:
+                name: qagent-secrets
+          env:
+            - name: PORT
+              value: "8001"
+          volumeMounts:
+            - name: gcp-sa-key
+              mountPath: /app/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8001 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8001 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plan-agent-svc
+  namespace: qagent
+  labels:
+    app: plan-agent
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  selector:
+    app: plan-agent
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+  type: ClusterIP
+
+---
+# ─────────────────────────────────────────────
+# Advisor Agent
+# ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: advisor-agent
+  namespace: qagent
+  labels:
+    app: advisor-agent
+    role: advisor
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: advisor-agent
+  template:
+    metadata:
+      labels:
+        app: advisor-agent
+        role: advisor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: qagent-sa
+      volumes:
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key
+      containers:
+        - name: advisor-agent
+          image: qagent/advisor-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8002
+          envFrom:
+            - configMapRef:
+                name: qagent-config
+            - secretRef:
+                name: qagent-secrets
+          env:
+            - name: PORT
+              value: "8002"
+          volumeMounts:
+            - name: gcp-sa-key
+              mountPath: /app/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8002 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8002 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: advisor-agent-svc
+  namespace: qagent
+  labels:
+    app: advisor-agent
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  selector:
+    app: advisor-agent
+  ports:
+    - name: http
+      port: 8002
+      targetPort: 8002
+  type: ClusterIP
+
+---
+# ─────────────────────────────────────────────
+# Coder Agent
+# ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coder-agent
+  namespace: qagent
+  labels:
+    app: coder-agent
+    role: coder
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  replicas: 2   # Scale out coders — they're stateless and CPU-bound
+  selector:
+    matchLabels:
+      app: coder-agent
+  template:
+    metadata:
+      labels:
+        app: coder-agent
+        role: coder
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8003"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: qagent-sa
+      volumes:
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key
+      containers:
+        - name: coder-agent
+          image: qagent/coder-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - configMapRef:
+                name: qagent-config
+            - secretRef:
+                name: qagent-secrets
+          env:
+            - name: PORT
+              value: "8003"
+          volumeMounts:
+            - name: gcp-sa-key
+              mountPath: /app/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8003 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8003 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coder-agent-svc
+  namespace: qagent
+  labels:
+    app: coder-agent
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  selector:
+    app: coder-agent
+  ports:
+    - name: http
+      port: 8003
+      targetPort: 8003
+  type: ClusterIP
+
+---
+# ─────────────────────────────────────────────
+# Reviewer Agent
+# ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reviewer-agent
+  namespace: qagent
+  labels:
+    app: reviewer-agent
+    role: reviewer
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reviewer-agent
+  template:
+    metadata:
+      labels:
+        app: reviewer-agent
+        role: reviewer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8004"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: qagent-sa
+      volumes:
+        - name: gcp-sa-key
+          secret:
+            secretName: gcp-sa-key
+      containers:
+        - name: reviewer-agent
+          image: qagent/reviewer-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8004
+          envFrom:
+            - configMapRef:
+                name: qagent-config
+            - secretRef:
+                name: qagent-secrets
+          env:
+            - name: PORT
+              value: "8004"
+          volumeMounts:
+            - name: gcp-sa-key
+              mountPath: /app/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8004 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8004 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reviewer-agent-svc
+  namespace: qagent
+  labels:
+    app: reviewer-agent
+    app.kubernetes.io/part-of: qagent-k8s
+spec:
+  selector:
+    app: reviewer-agent
+  ports:
+    - name: http
+      port: 8004
+      targetPort: 8004
+  type: ClusterIP

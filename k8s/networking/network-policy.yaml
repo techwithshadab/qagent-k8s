@@ -1,0 +1,176 @@
+# k8s/networking/network-policy.yaml
+#
+# Zero-trust networking for the QAgent system.
+# BEST PRACTICE: Default-deny all traffic, then explicitly allow only what's needed.
+#
+# Traffic matrix:
+#   User → Orchestrator (ingress from anywhere)
+#   Orchestrator → PlanAgent, AdvisorAgent, CoderAgent, ReviewerAgent
+#   No agent talks directly to another agent except via Orchestrator
+---
+# Default deny all ingress and egress in the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: qagent
+spec:
+  podSelector: {}   # Applies to ALL pods in namespace
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow Orchestrator to receive external traffic (from outside the namespace)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-orchestrator-ingress
+  namespace: qagent
+spec:
+  podSelector:
+    matchLabels:
+      app: orchestrator
+  policyTypes:
+    - Ingress
+  ingress:
+    - {}   # Allow from anywhere — tighten in production with namespaceSelector
+
+---
+# Allow Orchestrator to call all specialist agents
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-orchestrator-to-agents
+  namespace: qagent
+spec:
+  podSelector:
+    matchLabels:
+      role: coordinator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchExpressions:
+              - key: role
+                operator: In
+                values: [planner, advisor, coder, reviewer]
+    # Allow DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+
+---
+# Allow specialist agents to receive only from Orchestrator
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agents-from-orchestrator
+  namespace: qagent
+spec:
+  podSelector:
+    matchExpressions:
+      - key: role
+        operator: In
+        values: [planner, advisor, coder, reviewer]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: coordinator
+
+---
+---
+# Allow UI to send requests to Orchestrator
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ui-to-orchestrator
+  namespace: qagent
+spec:
+  podSelector:
+    matchLabels:
+      role: ui
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              role: coordinator
+    - ports:
+        - port: 53
+          protocol: UDP
+
+---
+# Allow Orchestrator to receive traffic from UI
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-orchestrator-from-ui
+  namespace: qagent
+spec:
+  podSelector:
+    matchLabels:
+      app: orchestrator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: ui
+
+---
+---
+# Allow Prometheus (in monitoring namespace) to scrape /metrics on all qagent pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: qagent
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8000
+          protocol: TCP
+        - port: 8001
+          protocol: TCP
+        - port: 8002
+          protocol: TCP
+        - port: 8003
+          protocol: TCP
+        - port: 8004
+          protocol: TCP
+        - port: 8005
+          protocol: TCP
+
+---
+# Allow all agents egress to the internet (Gemini API calls)
+# In production: use an egress proxy to allowlist api.google.com
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gemini-egress
+  namespace: qagent
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 443
+          protocol: TCP
+    - ports:
+        - port: 53
+          protocol: UDP
